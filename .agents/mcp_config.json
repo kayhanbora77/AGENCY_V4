@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "data-engineering-mcp": {
+      "command": "c:\\Coding\\AGENCY_V4\\.venv\\Scripts\\python.exe",
+      "args": [
+        "-m",
+        "data_engineering_mcp.server"
+      ],
+      "env": {
+        "PYTHONPATH": "c:\\Coding\\AGENCY_V4",
+        "PYTHONIOENCODING": "utf-8"
+      }
+    }
+  }
+}

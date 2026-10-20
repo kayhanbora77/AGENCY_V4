@@ -107,23 +107,35 @@ def process_flight_columns(df: pl.DataFrame) -> pl.DataFrame:
 # STEP 4 - PARSE DATES CAREFULLY (day-first, blank-safe)
 # ----------------------------------------------------------------------
 def parse_dates(df: pl.DataFrame) -> pl.DataFrame:
+    """Parse date columns: tries several formats (day-first, month-first, ISO, with/without time).
+    Blank -> NULL. Non-blank values that fail every format are reported as a warning."""
+    # priority order matters for ambiguous dates like 12/7/2024:
+    # month-first formats first, because this dataset uses M/D/YYYY (see "2/13/2025 7:00")
+    formats = [
+        "%m/%d/%Y %H:%M", "%m/%d/%Y %H:%M:%S", "%m/%d/%Y",
+        "%d/%m/%Y %H:%M", "%d/%m/%Y %H:%M:%S", "%d/%m/%Y",
+        "%Y-%m-%d %H:%M:%S", "%Y-%m-%d",
+    ]
     for col in DATE_COLS:
         if col not in df.columns:
             continue
-        before = df[col]
-        parsed = (
-            pl.when(before.is_null() | (before.str.strip_chars() == ""))
-            .then(None)
-            .otherwise(before.str.to_date("%d/%m/%Y", strict=False))
-            .alias(col)
-        )
-        df = df.with_columns(parsed)
 
-        # sanity check: anything non-blank that failed to parse is a real problem, surface it
-        bad = df.filter(before.is_not_null() & (before.str.strip_chars() != "") & df[col].is_null())
-        if bad.height > 0:
-            print(f"WARNING: {bad.height} unparseable values in {col}:")
-            print(bad.select([col]).to_pandas().to_string() if False else bad.select([col]))
+        raw = df[col]  # keep raw strings for the failure report
+        blank_mask = raw.is_null() | (raw.str.strip_chars() == "")
+
+        parsed_col = pl.coalesce(
+            [raw.str.strip_chars().str.to_datetime(fmt, strict=False) for fmt in formats]
+        )
+        df = df.with_columns(
+            pl.when(blank_mask).then(None).otherwise(parsed_col).alias(col)
+        )
+
+        failed = (~blank_mask) & df[col].is_null()
+        if failed.any():
+            n = int(failed.sum())
+            print(f"WARNING: {n} unparseable values in {col}, e.g.:")
+            for v in raw.filter(failed).to_list()[:5]:
+                print(f"   -> {v!r}")
     return df
 
 
